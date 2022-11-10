@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+
+import boto3
+import botocore
+import json
+import os
+import sys
+from datetime import datetime
+
+DEFAULT_AWS_REGION = "eu-west-2"
+OUTPUT_DIR = sys.argv[1]
+REQ_PARAMS = [
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "aws_region",
+    "volume_id",
+]
+
+
+def set_source_defaults(payload):
+    if "aws_region" not in payload["source"].keys():
+        payload["source"].update({"aws_region": DEFAULT_AWS_REGION})
+
+    return payload
+
+
+def validate_source(payload):
+    for param in REQ_PARAMS:
+        if param not in payload["source"].keys():
+            sys.stderr.write("\nRequired parameter {} not defined\n".format(param))
+            sys.exit(1)
+
+
+def write_output_file(snapshot_id, dir=OUTPUT_DIR, file="snapshot-id"):
+    if not os.path.exists(dir):
+        try:
+            os.mkdir(dir)
+        except OSError as err:
+            sys.stderr.write("Error: Failed to create directory: {}".format(err))
+            sys.stderr.write("{}".format(err))
+            sys.exit(1)
+
+    output_file = dir + "/" + file
+    with open(output_file, "w") as f:
+        f.write(snapshot_id)
+    f.close()
+
+
+def get_snapshot_data(payload):
+    try:
+        session = boto3.Session(
+            aws_access_key_id=payload["source"]["aws_access_key_id"],
+            aws_secret_access_key=payload["source"]["aws_secret_access_key"],
+            region_name=payload["source"]["aws_region"]
+        )
+        ec2_client = session.client(
+            "ec2",
+            payload["source"]["aws_region"]
+        )
+
+        response = ec2_client.describe_snapshots(
+            Filters=[
+                {
+                    "Name": "volume-id",
+                    "Values": [payload["source"]["volume_id"]]
+                }
+            ],
+        )
+    except botocore.exceptions.ClientError as err:
+        sys.stderr.write(
+            "Failed to connect to AWS:\n{}".format(err)
+        )
+        sys.exit(1)
+
+    if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
+        if len(response["Snapshots"]) == 0:
+            ec2_client.close()
+            sys.stderr.write(
+                "No Snapshots found for EBS Volume ID: {}".format(
+                    payload["source"]["volume_id"]
+                )
+            )
+            sys.exit(1)
+        else:
+            metadata = []
+            for snapshot in response["Snapshots"]:
+                start_time_string = datetime.strftime(snapshot["StartTime"], "%Y-%m-%d %H:%M:%S.%f%z")
+                if payload["version"]["snapshot_datetime"] == start_time_string:
+                    metadata.append({"name": "Description", "value": snapshot["Description"]})
+                    metadata.append({"name": "Encrypted", "value": snapshot["Encrypted"]})
+                    metadata.append({"name": "OwnerId", "value": snapshot["OwnerId"]})
+                    metadata.append({"name": "SnapshotId", "value": snapshot["SnapshotId"]})
+                    metadata.append({"name": "StartTime", "value": start_time_string})
+                    metadata.append({"name": "VolumeId", "value": snapshot["VolumeId"]})
+                    metadata.append({"name": "VolumeSize", "value": snapshot["VolumeSize"]})
+                    break
+
+            if len(metadata) == 0:
+                ec2_client.close()
+                sys.stderr.write(
+                    "Snapshot not found for datetime: {}\nHas it expired?\n".format(
+                        payload["version"]["snapshot_datetime"]
+                    )
+                )
+                sys.exit(1)
+                
+
+            ec2_client.close()
+            write_output_file(snapshot_id=snapshot["SnapshotId"])
+
+            output_dict = {}
+            output_dict.update({"version": {"snapshot_datetime": payload["version"]["snapshot_datetime"]}})
+            output_dict.update({"metadata": metadata})
+            return output_dict
+
+    else:
+        ec2_client.close()
+        sys.stderr.write("\nReceived {} error from AWS\n".format(
+            response["ResponseMetadata"]["HTTPStatusCode"]
+        ))
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    payload = set_source_defaults(json.load(sys.stdin))
+    validate_source(payload)
+    sys.stdout.write(json.dumps(get_snapshot_data(payload), indent=2))
