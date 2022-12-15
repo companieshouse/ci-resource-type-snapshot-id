@@ -7,12 +7,18 @@ import sys
 from datetime import datetime
 
 DEFAULT_AWS_REGION = "eu-west-2"
+REQ_METHODS = [
+    "ec2_tags",
+    "volume_tags",
+    "volume_id"
+]
 REQ_PARAMS = [
     "aws_access_key_id",
     "aws_secret_access_key",
     "aws_region",
-    "volume_id"
+    "lookup_method"
 ]
+
 
 def set_source_defaults(payload):
     if "aws_region" not in payload["source"].keys():
@@ -22,13 +28,29 @@ def set_source_defaults(payload):
 
 
 def validate_source(payload):
+    if payload["source"]["lookup_method"] not in REQ_METHODS:
+        sys.stderr.write("\nInvalid lookup method; must be one of {}\n".format(REQ_METHODS))
+        sys.exit(1)
+    else:
+        REQ_PARAMS.append(payload["source"]["lookup_method"])
+        if payload["source"]["lookup_method"] == "ec2_tags":
+          REQ_PARAMS.append("ec2_devicename")
+
     for param in REQ_PARAMS:
         if param not in payload["source"].keys():
             sys.stderr.write("\nRequired parameter {} not defined\n".format(param))
             sys.exit(1)
 
 
-def return_snapshots(payload):
+def log_lookup_error(lookup_method, message):
+    sys.stderr.write("\n[{}]: {}\n".format(
+        lookup_method,
+        message)
+    )
+    sys.exit(1)
+
+
+def return_snapshots_by_volume_id(lookup_method, payload):
     try:
         session = boto3.Session(
             aws_access_key_id=payload["source"]["aws_access_key_id"],
@@ -49,20 +71,16 @@ def return_snapshots(payload):
             ]
         )
     except botocore.exceptions.ClientError as err:
-        sys.stderr.write(
-            "Failed to connect to AWS:\n{}".format(err)
-        )
-        sys.exit(1)
+        message = "Failed to connect to AWS:\n{}".format(err)
+        log_lookup_error(lookup_method, message)
 
     if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
         if len(response["Snapshots"]) == 0:
             ec2_client.close()
-            sys.stderr.write(
-                "No Snapshots found for EBS Volume ID: {}".format(
-                    payload["source"]["volume_id"]
-                )
+            message = "No Snapshots found for EBS Volume ID: {}".format(
+                payload["source"]["volume_id"]
             )
-            sys.exit(1)
+            log_lookup_error(lookup_method, message)
 
         snapshot_date_list = []
         for snapshot in response["Snapshots"]:
@@ -89,13 +107,33 @@ def return_snapshots(payload):
 
     else:
         ec2_client.close()
-        sys.stderr.write("\nReceived {} error from AWS\n".format(
+        message = "\nReceived {} error from AWS\n".format(
             response["ResponseMetadata"]["HTTPStatusCode"]
+        )
+        log_lookup_error(lookup_method, message)
+
+
+def return_snapshots_manager(payload):
+    lookup_method = payload["source"]["lookup_method"]
+    if lookup_method == "ec2_tags":
+#        return return_snapshots_by_ec2_tags(lookup_method, payload)
+        sys.stderr.write("\n{} not yet supported\n".format(
+            lookup_method
         ))
         sys.exit(1)
+
+    if lookup_method == "volume_tags":
+#        return return_snapshots_by_volume_tags(lookup_method, payload)
+        sys.stderr.write("\n{} not yet supported\n".format(
+            lookup_method
+        ))
+        sys.exit(1)
+
+    if lookup_method == "volume_id":
+        return return_snapshots_by_volume_id(lookup_method, payload)
 
 
 if __name__ == "__main__":
     payload = set_source_defaults(json.load(sys.stdin))
     validate_source(payload)
-    sys.stdout.write(json.dumps(return_snapshots(payload), indent=2))
+    sys.stdout.write(json.dumps(return_snapshots_manager(payload), indent=2))
