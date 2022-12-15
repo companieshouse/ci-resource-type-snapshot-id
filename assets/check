@@ -42,12 +42,48 @@ def validate_source(payload):
             sys.exit(1)
 
 
+def validate_response(response):
+    if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
+        return True
+    else:
+        sys.stderr.write(
+            "Received {} error from AWS".format(
+                response["ResponseMetadata"]["HTTPStatusCode"]
+            )
+        )
+        sys.exit(1)
+
+
 def log_lookup_error(lookup_method, message):
     sys.stderr.write("\n[{}]: {}\n".format(
         lookup_method,
         message)
     )
     sys.exit(1)
+
+
+def process_snapshots(snapshots):
+    snapshot_date_list = []
+    for snapshot in snapshots:
+        snapshot_id = snapshot["SnapshotId"]
+        snapshot_date = snapshot["StartTime"]
+        snapshot_date_list.append(snapshot_date)
+
+    snapshot_date_list = sorted([datetime.strftime(dt, "%Y-%m-%d %H:%M:%S.%f%z") for dt in snapshot_date_list], reverse=True)
+    filtered_list = []
+    for date in snapshot_date_list:
+        filtered_list.append(date)
+        if "version" in payload.keys():
+            if date == payload["version"]["snapshot_datetime"]:
+                break
+
+    filtered_list.sort()
+
+    output_list = []
+    for date in filtered_list:
+        output_list.append({"snapshot_datetime": date})
+
+    return output_list
 
 
 def return_snapshots_by_volume_id(lookup_method, payload):
@@ -74,7 +110,7 @@ def return_snapshots_by_volume_id(lookup_method, payload):
         message = "Failed to connect to AWS:\n{}".format(err)
         log_lookup_error(lookup_method, message)
 
-    if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
+    if validate_response(response):
         if len(response["Snapshots"]) == 0:
             ec2_client.close()
             message = "No Snapshots found for EBS Volume ID: {}".format(
@@ -82,35 +118,25 @@ def return_snapshots_by_volume_id(lookup_method, payload):
             )
             log_lookup_error(lookup_method, message)
 
-        snapshot_date_list = []
-        for snapshot in response["Snapshots"]:
-            snapshot_id = snapshot["SnapshotId"]
-            snapshot_date = snapshot["StartTime"]
-            snapshot_date_list.append(snapshot_date)
-
-        snapshot_date_list = sorted([datetime.strftime(dt, "%Y-%m-%d %H:%M:%S.%f%z") for dt in snapshot_date_list], reverse=True)
-        filtered_list = []
-        for date in snapshot_date_list:
-            filtered_list.append(date)
-            if "version" in payload.keys():
-                if date == payload["version"]["snapshot_datetime"]:
-                    break
-
-        filtered_list.sort()
-
-        output_list = []
-        for date in filtered_list:
-            output_list.append({"snapshot_datetime": date})
-
+        return process_snapshots(response["Snapshots"])
         ec2_client.close()
-        return output_list
 
-    else:
-        ec2_client.close()
-        message = "\nReceived {} error from AWS\n".format(
-            response["ResponseMetadata"]["HTTPStatusCode"]
-        )
-        log_lookup_error(lookup_method, message)
+
+def return_snapshots_by_ec2_tags(lookup_method, payload):
+    """
+    This function will lookup an instance based on the provided tags
+    and determine the volume-id of the block device with the match devicename.
+    A lookup is then performed for snapshots based on this volume-id
+    """
+    sys.exit(1)
+
+
+def return_snapshots_by_volume_tags(lookup_method, payload):
+    """
+    This function will lookup a volume-id based on the provided tags.
+    A lookup is this performed for snapshots based on this volume-id
+    """
+    sys.exit(1)
 
 
 def return_snapshots_manager(payload):
