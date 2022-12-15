@@ -62,7 +62,7 @@ def log_lookup_error(lookup_method, message):
     sys.exit(1)
 
 
-def process_snapshots(snapshots):
+def process_snapshots(payload, snapshots):
     snapshot_date_list = []
     for snapshot in snapshots:
         snapshot_id = snapshot["SnapshotId"]
@@ -118,7 +118,7 @@ def return_snapshots_by_volume_id(lookup_method, payload):
             )
             log_lookup_error(lookup_method, message)
 
-        return process_snapshots(response["Snapshots"])
+        return process_snapshots(payload, response["Snapshots"])
         ec2_client.close()
 
 
