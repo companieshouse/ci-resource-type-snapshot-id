@@ -3,6 +3,7 @@
 import boto3
 import botocore
 import json
+import re
 import sys
 from datetime import datetime
 
@@ -18,7 +19,8 @@ REQ_PARAMS = [
     "aws_region",
     "lookup_method"
 ]
-
+TAGS_REGEX = '^(?:[0-9a-zA-Z-]*=[0-9a-zA-Z-]*(?:,|$))+$'
+VOLUMEID_REGEX = '^vol-[0-9a-f]{17}$'
 
 def set_source_defaults(payload):
     if "aws_region" not in payload["source"].keys():
@@ -105,6 +107,9 @@ def process_snapshots(payload, snapshots):
 
 
 def return_snapshots_by_volume_id(ec2_client, lookup_method, payload):
+    if not re.search(VOLUMEID_REGEX, payload["source"]["volume_id"]):
+        message = "Invalid Volume ID: {}".format(payload["source"]["volume_id"])
+        log_lookup_error(lookup_method, message)
     try:
         response = ec2_client.describe_snapshots(
             Filters=[
@@ -131,13 +136,12 @@ def return_snapshots_by_volume_id(ec2_client, lookup_method, payload):
 
 
 def return_snapshots_by_ec2_tags(ec2_client, lookup_method, payload):
-    """
-    This function will lookup an instance based on the provided tags and
-    determine the volume-id of the block device with the matching devicename.
-    A lookup is then performed for snapshots based on this volume-id
-    """
     if payload["source"]["ec2_tags"] == "":
         message = "Missing EC2 instance tags"
+        log_lookup_error(lookup_method, message)
+
+    if not re.search(TAGS_REGEX, payload["source"]["ec2_tags"]):
+        message = "Invalid tags string provided for lookup: {}".format(payload["source"]["ec2_tags"])
         log_lookup_error(lookup_method, message)
 
     if payload["source"]["ec2_devicename"] == "":
@@ -162,12 +166,12 @@ def return_snapshots_by_ec2_tags(ec2_client, lookup_method, payload):
     if validate_response(response):
         if len(response["Reservations"]) == 0:
             ec2_client.close()
-            message = "Provided EC2 tags returned no results"
+            message = "Provided EC2 tags returned no results: {}".format(payload["source"]["ec2_tags"])
             log_lookup_error(lookup_method, message)
 
         if len(response["Reservations"]) > 1:
             ec2_client.close()
-            message = "Provided EC2 tags returned multiple results"
+            message = "Provided EC2 tags returned multiple results: {}".format(payload["source"]["ec2_tags"])
             log_lookup_error(lookup_method, message)
 
         volume_id = ""
@@ -179,7 +183,7 @@ def return_snapshots_by_ec2_tags(ec2_client, lookup_method, payload):
 
         if volume_id == "":
             ec2_client.close()
-            message = "Provided EC2 device name returned no results"
+            message = "Provided EC2 device name returned no results: {}".format(payload["source"]["ec2_devicename"])
             log_lookup_error(lookup_method, message)
         else:
             payload["source"].update({"volume_id": volume_id})
@@ -188,11 +192,43 @@ def return_snapshots_by_ec2_tags(ec2_client, lookup_method, payload):
 
 
 def return_snapshots_by_volume_tags(ec2_client, lookup_method, payload):
-    """
-    This function will lookup a volume-id based on the provided tags.
-    A lookup is this performed for snapshots based on this volume-id
-    """
-    sys.exit(1)
+    if payload["source"]["volume_tags"] == "":
+        message = "Missing EC2 volume tags"
+        log_lookup_error(lookup_method, message)
+
+    if not re.search(TAGS_REGEX, payload["source"]["volume_tags"]):
+        message = "Invalid tags string provided for lookup: {}".format(payload["source"]["volume_tags"])
+        log_lookup_error(lookup_method, message)
+
+    raw_tags_dict = dict(pair.split("=") for pair in payload["source"]["volume_tags"].split(","))
+    clean_tags_dict = {k.strip(): v.strip() for k, v in raw_tags_dict.items()}
+    filters_list = []
+    for tagname, tagvalue in clean_tags_dict.items():
+        filters_list.append({"Name": "tag:" + tagname, "Values": [tagvalue]})
+
+    try:
+        response = ec2_client.describe_volumes(
+            Filters=filters_list,
+        )
+
+    except botocore.exceptions.ClientError as err:
+        message = "Failed to connect to AWS:\n{}".format(err)
+        log_lookup_error(lookup_method, message)
+
+    if validate_response(response):
+        if len(response["Volumes"]) == 0:
+            ec2_client.close()
+            message = "Provided volume tags returned no results: {}".format(payload["source"]["volume_tags"])
+            log_lookup_error(lookup_method, message)
+
+        if len(response["Volumes"]) > 1:
+            ec2_client.close()
+            message = "Provided volume tags returned multiple results: {}".format(payload["source"]["volume_tags"])
+            log_lookup_error(lookup_method, message)
+
+        payload["source"].update({"volume_id": response["Volumes"][0]["VolumeId"]})
+        return return_snapshots_by_volume_id(ec2_client, lookup_method, payload)
+
 
 
 def return_snapshots_manager(payload):
@@ -202,12 +238,8 @@ def return_snapshots_manager(payload):
         return return_snapshots_by_ec2_tags(ec2_client, lookup_method, payload)
 
     if lookup_method == "volume_tags":
-#        ec2_client = create_ec2_client(payload)
-#        return return_snapshots_by_volume_tags(lookup_method, payload)
-        sys.stderr.write("\n{} not yet supported\n".format(
-            lookup_method
-        ))
-        sys.exit(1)
+        ec2_client = create_ec2_client(payload)
+        return return_snapshots_by_volume_tags(ec2_client,lookup_method, payload)
 
     if lookup_method == "volume_id":
         ec2_client = create_ec2_client(payload)
