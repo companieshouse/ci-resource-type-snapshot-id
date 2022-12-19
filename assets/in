@@ -33,6 +33,11 @@ def set_source_defaults(payload):
 
 
 def validate_source(payload):
+    for param in REQ_PARAMS:
+        if param not in payload["source"].keys():
+            sys.stderr.write("\nRequired parameter {} not defined\n".format(param))
+            sys.exit(1)
+            
     if payload["source"]["lookup_method"] not in REQ_METHODS:
         sys.stderr.write("\nInvalid lookup method; must be one of {}\n".format(REQ_METHODS))
         sys.exit(1)
