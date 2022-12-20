@@ -68,9 +68,7 @@ def create_ec2_client(payload):
 
 
 def validate_response(response):
-    if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
-        return True
-    else:
+    if response["ResponseMetadata"]["HTTPStatusCode"] != 200:
         sys.stderr.write(
             "Received {} error from AWS".format(
                 response["ResponseMetadata"]["HTTPStatusCode"]
@@ -128,16 +126,16 @@ def return_snapshots_by_volume_id(ec2_client, lookup_method, payload):
         message = "Failed to connect to AWS:\n{}".format(err)
         log_lookup_error(lookup_method, message)
 
-    if validate_response(response):
-        if len(response["Snapshots"]) == 0:
-            ec2_client.close()
-            message = "No Snapshots found for EBS Volume ID: {}".format(
-                payload["source"]["volume_id"]
-            )
-            log_lookup_error(lookup_method, message)
-
+    validate_response(response)
+    if len(response["Snapshots"]) == 0:
         ec2_client.close()
-        return process_snapshots(payload, response["Snapshots"])
+        message = "No Snapshots found for EBS Volume ID: {}".format(
+            payload["source"]["volume_id"]
+        )
+        log_lookup_error(lookup_method, message)
+
+    ec2_client.close()
+    return process_snapshots(payload, response["Snapshots"])
 
 
 def return_snapshots_by_ec2_tags(ec2_client, lookup_method, payload):
@@ -168,31 +166,31 @@ def return_snapshots_by_ec2_tags(ec2_client, lookup_method, payload):
         message = "Failed to connect to AWS:\n{}".format(err)
         log_lookup_error(lookup_method, message)
 
-    if validate_response(response):
-        if len(response["Reservations"]) == 0:
-            ec2_client.close()
-            message = "Provided EC2 tags returned no results: {}".format(payload["source"]["ec2_tags"])
-            log_lookup_error(lookup_method, message)
+    validate_response(response)
+    if len(response["Reservations"]) == 0:
+        ec2_client.close()
+        message = "Provided EC2 tags returned no results: {}".format(payload["source"]["ec2_tags"])
+        log_lookup_error(lookup_method, message)
 
-        if len(response["Reservations"]) > 1:
-            ec2_client.close()
-            message = "Provided EC2 tags returned multiple results: {}".format(payload["source"]["ec2_tags"])
-            log_lookup_error(lookup_method, message)
+    if len(response["Reservations"]) > 1:
+        ec2_client.close()
+        message = "Provided EC2 tags returned multiple results: {}".format(payload["source"]["ec2_tags"])
+        log_lookup_error(lookup_method, message)
 
-        volume_id = ""
-        for reservation in response["Reservations"]:
-            for instance in reservation["Instances"]:
-                for block_dev in instance["BlockDeviceMappings"]:
-                    if payload["source"]["ec2_devicename"] == block_dev["DeviceName"]:
-                        volume_id = block_dev["Ebs"]["VolumeId"]
+    volume_id = ""
+    for reservation in response["Reservations"]:
+        for instance in reservation["Instances"]:
+            for block_dev in instance["BlockDeviceMappings"]:
+                if payload["source"]["ec2_devicename"] == block_dev["DeviceName"]:
+                    volume_id = block_dev["Ebs"]["VolumeId"]
 
-        if volume_id == "":
-            ec2_client.close()
-            message = "Provided EC2 device name returned no results: {}".format(payload["source"]["ec2_devicename"])
-            log_lookup_error(lookup_method, message)
-        else:
-            payload["source"].update({"volume_id": volume_id})
-            return return_snapshots_by_volume_id(ec2_client, lookup_method, payload)
+    if volume_id == "":
+        ec2_client.close()
+        message = "Provided EC2 device name returned no results: {}".format(payload["source"]["ec2_devicename"])
+        log_lookup_error(lookup_method, message)
+    else:
+        payload["source"].update({"volume_id": volume_id})
+        return return_snapshots_by_volume_id(ec2_client, lookup_method, payload)
 
 
 
@@ -220,19 +218,19 @@ def return_snapshots_by_volume_tags(ec2_client, lookup_method, payload):
         message = "Failed to connect to AWS:\n{}".format(err)
         log_lookup_error(lookup_method, message)
 
-    if validate_response(response):
-        if len(response["Volumes"]) == 0:
-            ec2_client.close()
-            message = "Provided volume tags returned no results: {}".format(payload["source"]["volume_tags"])
-            log_lookup_error(lookup_method, message)
+    validate_response(response)
+    if len(response["Volumes"]) == 0:
+        ec2_client.close()
+        message = "Provided volume tags returned no results: {}".format(payload["source"]["volume_tags"])
+        log_lookup_error(lookup_method, message)
 
-        if len(response["Volumes"]) > 1:
-            ec2_client.close()
-            message = "Provided volume tags returned multiple results: {}".format(payload["source"]["volume_tags"])
-            log_lookup_error(lookup_method, message)
+    if len(response["Volumes"]) > 1:
+        ec2_client.close()
+        message = "Provided volume tags returned multiple results: {}".format(payload["source"]["volume_tags"])
+        log_lookup_error(lookup_method, message)
 
-        payload["source"].update({"volume_id": response["Volumes"][0]["VolumeId"]})
-        return return_snapshots_by_volume_id(ec2_client, lookup_method, payload)
+    payload["source"].update({"volume_id": response["Volumes"][0]["VolumeId"]})
+    return return_snapshots_by_volume_id(ec2_client, lookup_method, payload)
 
 
 
