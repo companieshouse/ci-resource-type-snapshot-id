@@ -134,12 +134,12 @@ def return_snapshot_by_volume_id(ec2_client, lookup_method, payload):
             start_time_string = datetime.strftime(snapshot["StartTime"], "%Y-%m-%d %H:%M:%S.%f%z")
             if payload["version"]["snapshot_datetime"] == start_time_string:
                 metadata.append({"name": "Description", "value": snapshot["Description"]})
-                metadata.append({"name": "Encrypted", "value": snapshot["Encrypted"]})
+                metadata.append({"name": "Encrypted", "value": str(snapshot["Encrypted"])})
                 metadata.append({"name": "OwnerId", "value": snapshot["OwnerId"]})
                 metadata.append({"name": "SnapshotId", "value": snapshot["SnapshotId"]})
                 metadata.append({"name": "StartTime", "value": start_time_string})
                 metadata.append({"name": "VolumeId", "value": snapshot["VolumeId"]})
-                metadata.append({"name": "VolumeSize", "value": snapshot["VolumeSize"]})
+                metadata.append({"name": "VolumeSize", "value": str(snapshot["VolumeSize"])})
                 break
 
         if len(metadata) == 0:
