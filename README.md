@@ -13,7 +13,7 @@ resource_types:
   source:
     aws_access_key_id: <aws_access_key_id>
     aws_secret_access_key: <aws_secret_access_key>
-    repository: <docker-registry>/ci-resource-type-ami-id
+    repository: <docker-registry>/ci-resource-type-snapshot-id
     tag: latest
 ```
 
@@ -42,7 +42,7 @@ With the following resource configuration:
 ``` yaml
 resources:
 - name: snapshot-id
-  type: ci-resource-type-ami-id
+  type: ci-resource-type-snapshot-id
   source:
     aws_access_key_id: <aws_access_key_id>
     aws_secret_access_key: <aws_secret_access_key>
@@ -70,7 +70,7 @@ With the following resource configuration:
 ``` yaml
 resources:
 - name: snapshot-id
-  type: ci-resource-type-ami-id
+  type: ci-resource-type-snapshot-id
   source:
     aws_access_key_id: <aws_access_key_id>
     aws_secret_access_key: <aws_secret_access_key>
@@ -98,7 +98,7 @@ With the following resource configuration:
 ``` yaml
 resources:
 - name: snapshot-id
-  type: ci-resource-type-ami-id
+  type: ci-resource-type-snapshot-id
   source:
     aws_access_key_id: <aws_access_key_id>
     aws_secret_access_key: <aws_secret_access_key>
